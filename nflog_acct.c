@@ -457,17 +457,6 @@ int nflog_init(struct nflog_handles *nh, int group, nflog_callback *cb, struct a
         syslog(LOG_WARNING, "requested buffer size (%d) has not been set (%d)\n", NFLOG_BUFF_SIZE, size);
     }
 
-    // printf("unbinding existing nf_log handler for AF_INET (if any)\n");
-    // if (nflog_unbind_pf(nh->h, AF_INET) < 0) {
-    //     fprintf(stderr, "error nflog_unbind_pf()\n");
-    //     return -1;
-    // }
-
-    // if (nflog_bind_pf(nh->h, AF_INET) < 0) {
-    //     fprintf(stderr, "nflog_bind_pf\n");
-    //     return -1;
-    // }
-
     nh->gh = nflog_bind_group(nh->h, group);
     if (!nh->gh) {
         fprintf(stderr, "no handle for group %d\n", group);
