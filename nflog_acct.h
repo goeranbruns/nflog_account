@@ -28,48 +28,52 @@
 #define MAX_NET_LENGTH INET_ADDRSTRLEN + 4
 #define HOST_BLOCK_SIZE 10
 
+// accounting network definition
 struct net_data {
-    uint32_t net;
-    uint32_t mask;
+    uint32_t net; // ip
+    uint32_t mask; //mask
 };
 
-struct host_data {
-    uint32_t ip;
-    uint64_t packets_src;
-    uint64_t bytes_src;
-    uint64_t packets_dst;
-    uint64_t bytes_dst;
-    time_t last_seen;
-    time_t first_seen;
+// acounting data defintion
+struct host_data { 
+    uint32_t ip; // ip accounted for
+    uint64_t packets_src; // packets originated from this ip
+    uint64_t bytes_src; // data in bytes originated from this ip
+    uint64_t packets_dst; // packets destinated to this ip
+    uint64_t bytes_dst; // data in bytes destinatited to this ip
+    time_t last_seen; // unix timestamp when packets last went from or to this ip
+    time_t first_seen; // unix timestamp when packets first went from or to this ip
 };
 
+// socket definition
 struct socket_data {
-    char name[MAX_SOCKETNAME_LENGTH];
-    int fd;
-    struct host_data *hosts;
-    int hosts_len;
+    char name[MAX_SOCKETNAME_LENGTH]; // absolute filename of socket
+    int fd; // accociated file descriptor
+    struct host_data *hosts; // hosts tracked by this sockets
+    int hosts_len; // num of hosts
 };
 
 struct account_data {
-    int seq;
-    struct net_data *nets;
-    int nets_len;
-    struct socket_data *sockets;
-    int sockets_len;
+    int seq;  // receiving sequence number 
+    struct net_data *nets;  // networks
+    int nets_len;  // num networks
+    struct socket_data *sockets;  // sockets
+    int sockets_len;  // num sockets
 };
 
 struct nflog_handles {
-    struct nflog_handle *h;
-    struct nflog_g_handle *gh;
+    struct nflog_handle *h; // global nflog handle
+    struct nflog_g_handle *gh; // nflog handle for the monitored group
 };
 
+// client connected to a sockets
 struct client_data {
-    int server_fd;
-    int client_fd;
-    int last_seen;
+    int server_fd; // file descriptor accociated to the socket
+    int client_fd; // client file descriptor
+    int last_seen; // unix timestamp
 };
 
-struct host_data* get_host(struct socket_data *, int);
+struct host_data* get_host(struct socket_data *, uint32_t);
 
 int nflog_init(struct nflog_handles *, int , nflog_callback *, struct account_data *);
 void nflog_shutdown(struct nflog_handles *);
@@ -83,6 +87,7 @@ void init_hosts(struct socket_data *, int);
 void print_data(int, struct socket_data *);
 void print_all_data(int, struct account_data *);
 void reset_data(struct socket_data *);
+void flush_host(struct socket_data *, uint32_t);
 void free_data(struct account_data *);
 void sockets_shutdown(struct account_data *);
 

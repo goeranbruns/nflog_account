@@ -38,14 +38,14 @@
 #include "nla_socket.h"
 #include "nflog_acct.h"
 
-#define MAX_FD 32
-#define MAX_NETS 5
-#define MAX_SOCKETS 5
+#define MAX_FD 32 // maximum file descriptors
+#define MAX_NETS 5 // maximum network definitions
+#define MAX_SOCKETS 5 // maximum sockets
 
-#define NFLOG_BUFF_SIZE 1048576
+#define NFLOG_BUFF_SIZE 1048576 // buffer size for receiving nflog packets
 
-int nflog_error_count = 0;
-char nflog_buffer[NFLOG_BUFF_SIZE];
+int nflog_error_count = 0; // global error count
+char nflog_buffer[NFLOG_BUFF_SIZE]; // receiving buffer
 
 void usage(char *prog)
 {
@@ -54,16 +54,17 @@ void usage(char *prog)
 
 int main(int argc, char *argv[])
 {
-    char networks[MAX_NETS][MAX_NET_LENGTH];
+    char networks[MAX_NETS][MAX_NET_LENGTH]; // networks
     int num_networks = 0;
-    char sockets[MAX_SOCKETS][MAX_SOCKETNAME_LENGTH];
+    char sockets[MAX_SOCKETS][MAX_SOCKETNAME_LENGTH]; // sockets
     int num_sockets = 0;
     int test_mode = 0;
     
     int nflog_group = -1;
-    struct pollfd fds[MAX_FD];
-    struct client_data clients[MAX_FD];
+    struct pollfd fds[MAX_FD]; // pollfd stucture array
+    struct client_data clients[MAX_FD]; // clients connected to sockets
 
+    // init global account data structure
     struct account_data data = {
         .seq = 0,
         .nets = NULL,
@@ -72,7 +73,7 @@ int main(int argc, char *argv[])
         .sockets_len = 0
     };
 
-    struct nflog_handles nh;
+    struct nflog_handles nh; 
     int open_fd = 0;
     int opt;
 
@@ -82,6 +83,7 @@ int main(int argc, char *argv[])
         }
         switch (opt) {
             case 'n':
+                // get networks to account traffic for
                 if (num_networks == MAX_NETS) {
                     fprintf(stderr, "Too many networks given");
                     exit(EXIT_FAILURE);
@@ -92,6 +94,7 @@ int main(int argc, char *argv[])
                 num_networks++;
                 break;
             case 's':
+                // get output sockets per which traffic is accounted
                 if (num_sockets == MAX_SOCKETS) {
                     fprintf(stderr, "Too many networks given");
                     exit(EXIT_FAILURE);
@@ -101,6 +104,7 @@ int main(int argc, char *argv[])
                 num_sockets++;
                 break;
             case 'g':
+                // nflog group which is monitored for traffic
                 nflog_group = atoi(optarg);
                 break;
             case 't':
@@ -118,8 +122,10 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    // init syslog
     openlog(NULL, LOG_PID, LOG_DAEMON);
 
+    // init data structures
     if (init_data(&data, networks, num_networks, sockets, num_sockets) == -1) {
         free_data(&data);
         fprintf(stderr, "Invalid network option\n");
@@ -136,7 +142,7 @@ int main(int argc, char *argv[])
     fds[open_fd].events = POLLIN;
     open_fd++;
 
-    // init sockets file descriptors
+    // init socket file descriptors
     for (int i = 0; i < data.sockets_len; i++) {
         struct socket_data *sd = &data.sockets[i];
         sd->fd = socket_init(sd->name);
@@ -178,6 +184,7 @@ int main(int argc, char *argv[])
 
     syslog(LOG_INFO, "up and running");
     while (open_fd > 0) {
+        // monitor all file descriptors via poll
         int rv = poll(fds, open_fd, -1);
 
         // time out ?
@@ -190,6 +197,7 @@ int main(int argc, char *argv[])
             break;
         }
 
+        // iterate over file descriptors to which triggered an event
         for (int i = 0; i < open_fd; i++) {
             struct pollfd pfd = fds[i];
 
@@ -199,7 +207,7 @@ int main(int argc, char *argv[])
             }
 
             // netfilter log event
-            if (pfd.fd == netfilter_fd) {
+            if (pfd.fd == netfilter_fd) {                
                 int netfilter_rv = nflog_handle(pfd, &nh);
 
                 if (netfilter_rv == -1) {                    
@@ -243,6 +251,7 @@ int main(int argc, char *argv[])
             if (sd != NULL) {
                 int client_fd = socket_handle(pfd);
 
+                // new client connecting to a socket
                 if (0 != client_fd) {
                     // look for a free spot
                     // add client to poll file descriptor
@@ -296,13 +305,18 @@ int main(int argc, char *argv[])
                 }
             }
         
-            int client_rv = client_handle(pfd);
+            uint32_t addr = 0;
+            int client_rv = client_handle(pfd, &addr);
 
             if (client_rv & CLIENT_PRINT) {
                 print_data(pfd.fd, sd);
             }
 
-            if (client_rv & CLIENT_FLUSH) {
+            if (client_rv & HOST_FLUSH) {
+                flush_host(sd, addr);
+            }
+
+            if (client_rv & SOCKET_FLUSH) {
                 reset_data(sd);
             }
 
@@ -403,6 +417,16 @@ void reset_data(struct socket_data *sd)
     sd->hosts = NULL;
     sd->hosts_len = 0;
     init_hosts(sd, HOST_BLOCK_SIZE);
+}
+
+void flush_host(struct socket_data *sd, uint32_t addr)
+{
+    for (int i = 0; i < sd->hosts_len; i++) {
+        if (sd->hosts[i].ip && sd->hosts[i].ip == addr) {
+            init_host(&sd->hosts[i], 0);
+            break;
+        }
+    }
 }
 
 void print_data(int fd, struct socket_data *sd)
@@ -604,7 +628,7 @@ void set_seen(struct host_data *host, time_t ts)
     host->last_seen = ts;
 }
 
-struct host_data* get_host(struct socket_data *sd, int addr)
+struct host_data* get_host(struct socket_data *sd, uint32_t addr)
 {
     struct host_data *host = NULL;
 

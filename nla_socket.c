@@ -25,8 +25,10 @@
 #include <sys/stat.h>
 #include <poll.h>
 #include <syslog.h>
+#include <arpa/inet.h>
 
 #include "nla_socket.h"
+
 
 int socket_init(char *name)
 {
@@ -64,7 +66,7 @@ int socket_init(char *name)
     return fd;
 }
 
-void socket_shutdown(int fd, char* name)
+void socket_shutdown(int fd, char *name)
 {
     close(fd);
     unlink(name);
@@ -88,18 +90,20 @@ int socket_handle(struct pollfd pfd)
     return rv;
 }
 
-int client_handle(struct pollfd pfd)
+int client_handle(struct pollfd pfd, uint32_t *hostAddr)
 {
     int events = pfd.revents;
     int rv = 0;
 
     if (events & POLLIN) {
         char buf[32];
+        // read command in buffer
         int ret = read(pfd.fd, buf, sizeof(buf));
         if (ret == -1) {
             syslog(LOG_WARNING, "error read from client");
             // fprintf(stderr, "error read from client\n");
         } else {
+            // 0 terminate buffer
             buf[sizeof(buf) - 1] = 0;
             
             // printf("received \"%s\"\n", buf);
@@ -107,7 +111,28 @@ int client_handle(struct pollfd pfd)
             if (strncmp(CLIENT_CMD_STATS, buf, 5) == 0) {
                 rv = CLIENT_PRINT | CLIENT_DISCONNECT;
             } else if (strncmp(CLIENT_CMD_FLUSH, buf, 5) == 0) {
-                rv = CLIENT_PRINT | CLIENT_FLUSH | CLIENT_DISCONNECT;
+                rv = CLIENT_PRINT | CLIENT_DISCONNECT;
+                // possible host to flush given
+                if (ret > 6) {
+                    struct in_addr addr = {
+                        .s_addr = 0
+                    };
+                    // replace trailing line feed with 0
+                    for (int i = 6; i < ret; i++) {
+                        if (buf[i] == 10) {
+                            buf[i] = 0;
+                            break;
+                        }
+                    }
+                    // try to parse ip
+                    if (inet_pton(AF_INET, &buf[6], &addr) == 1) {
+                        *hostAddr = addr.s_addr;
+                        rv += HOST_FLUSH;
+                    }
+                } else {
+                    rv += SOCKET_FLUSH;
+                }
+
             } else {
                 rv = CLIENT_DISCONNECT;
             }
